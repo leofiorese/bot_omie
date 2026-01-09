@@ -434,8 +434,13 @@ def extrair_relatorio_omie(page: Page, nome_menu: str, data_slug: str, nome_arqu
         
         # Return to the reports menu by hovering over 'paid' again
         logger.info("Retornando ao menu de relatórios...")
-        page.get_by_role("link", name="paid").hover()
-        time.sleep(1)
+        try:
+            fechar_popups(page)
+            page.get_by_role("link", name="paid").hover()
+            time.sleep(1)
+        except Exception as e:
+            logger.warning(f"⚠️ Aviso ao retornar ao menu (o download foi bem sucedido): {e}")
+            # We don't return None here because the download WAS successful
         
         return dest_path
         
@@ -501,7 +506,7 @@ def run_extraction(relatorios_selecionados: list = None):
     logger.info("="*60)
     
     with sync_playwright() as playwright:
-        browser, context = get_browser_context(playwright, headless=False)
+        browser, context = get_browser_context(playwright, headless=True)
         page = context.new_page()
         
         try:

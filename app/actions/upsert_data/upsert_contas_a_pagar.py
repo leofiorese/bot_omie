@@ -154,7 +154,8 @@ def upsert_data(df: pd.DataFrame, csv_path: str = None) -> int:
         
         # Archive the file after successful upsert
         if csv_path and os.path.exists(csv_path):
-            arquivar_arquivo(csv_path, TABLE_NAME)
+            # User requested explicitly "A PAGAR" (with space) for the file
+            arquivar_arquivo(csv_path, "A PAGAR")
         
         return rows_affected
         
