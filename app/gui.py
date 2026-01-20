@@ -11,6 +11,9 @@ import threading
 import logging
 import os
 import sys
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Add parent path for imports
 sys.path.insert(0, os.path.dirname(__file__))
@@ -43,6 +46,12 @@ class BotOmieGUI:
         self.root.title("Bot Omie - Extração de Relatórios")
         self.root.geometry("800x600")
         self.root.resizable(True, True)
+        
+        # Start maximized (Windows)
+        try:
+            self.root.state('zoomed')
+        except:
+            pass
         
         # Configure style
         self.style = ttk.Style()
@@ -310,12 +319,22 @@ class BotOmieGUI:
         self.btn_iniciar.config(state=tk.NORMAL)
         self.btn_parar.config(state=tk.DISABLED)
         
+        # Check for auto-close setting
+        auto_close = os.getenv("AUTO_CLOSE", "false").lower() == "true"
+
         if success:
             self.status_bar.config(text="Extração concluída com sucesso!")
-            messagebox.showinfo("Sucesso", "Extração de relatórios concluída!")
+            if not auto_close:
+                messagebox.showinfo("Sucesso", "Extração de relatórios concluída!")
         else:
             self.status_bar.config(text="Erro durante a extração")
-            messagebox.showerror("Erro", "Ocorreu um erro durante a extração. Verifique o log.")
+            if not auto_close:
+                messagebox.showerror("Erro", "Ocorreu um erro durante a extração. Verifique o log.")
+
+        # Execute auto-close if enabled
+        if auto_close:
+            logger.info("AUTO_CLOSE ativado. Fechando aplicação em 5 segundos...")
+            self.root.after(5000, self.root.quit)
     
     def parar_extracao(self):
         """Stop the extraction process."""

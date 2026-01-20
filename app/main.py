@@ -586,3 +586,7 @@ def run_once():
 if __name__ == "__main__":
     # Run extraction when called directly
     run_once()
+    
+    if os.getenv("AUTO_CLOSE", "false").lower() == "true":
+        logger.info("AUTO_CLOSE ativado. Finalizando execução.")
+        sys.exit(0)
