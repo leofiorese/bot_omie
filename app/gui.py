@@ -77,6 +77,33 @@ class BotOmieGUI:
         self.create_widgets()
         self.setup_logging()
         self.check_auth_status()
+
+        # Inactivity Flag System
+        self.user_active = False
+        self.inactivity_timer = self.root.after(10000, self.check_inactivity)
+        
+        # Bind user interactions
+        self.root.bind('<Button-1>', self.on_user_interaction)
+        self.root.bind('<Key>', self.on_user_interaction)
+
+    def on_user_interaction(self, event):
+        """Mark user as active and cancel inactivity timer."""
+        if not self.user_active:
+            self.user_active = True
+            if self.inactivity_timer:
+                self.root.after_cancel(self.inactivity_timer)
+                self.inactivity_timer = None
+            logger.info("Interação do usuário detectada. Modo automático cancelado.")
+
+    def check_inactivity(self):
+        """Check if user has been inactive and start extraction if so."""
+        if not self.user_active:
+            logger.info("Nenhuma atividade detectada por 10 segundos. Iniciando extração automática...")
+            # Only start if authenticated and not already running
+            if auth_exists() and str(self.btn_iniciar['state']) != 'disabled':
+                self.run_extracao()
+            elif not auth_exists():
+                logger.warning("Não foi possível iniciar automaticamente: Não autenticado.")
     
     def create_widgets(self):
         """Create all GUI widgets."""
