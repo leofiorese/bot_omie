@@ -411,7 +411,7 @@ def extrair_relatorio_omie(page: Page, nome_menu: str, data_slug: str, nome_arqu
         # Phase 5: Click "Excel" format and wait for download
         logger.info("Selecionando formato Excel...")
         
-        with page.expect_download(timeout=60000) as download_info:
+        with page.expect_download(timeout=300000) as download_info:
             page.get_by_role("menuitem", name="Excel").locator("span").first.click()
         
         download: Download = download_info.value
