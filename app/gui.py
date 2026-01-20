@@ -80,6 +80,7 @@ class BotOmieGUI:
 
         # Inactivity Flag System
         self.user_active = False
+        self.automation_started = False
         self.inactivity_timer = self.root.after(10000, self.check_inactivity)
         
         # Bind user interactions
@@ -88,6 +89,10 @@ class BotOmieGUI:
 
     def on_user_interaction(self, event):
         """Mark user as active and cancel inactivity timer."""
+        # If automation already started, ignore user interaction regarding the timer
+        if self.automation_started:
+            return
+
         if not self.user_active:
             self.user_active = True
             if self.inactivity_timer:
@@ -98,6 +103,10 @@ class BotOmieGUI:
     def check_inactivity(self):
         """Check if user has been inactive and start extraction if so."""
         if not self.user_active:
+            # Mark automation as started to prevent cancellation by subsequent clicks
+            self.automation_started = True
+            self.inactivity_timer = None # Timer has fired
+
             logger.info("Nenhuma atividade detectada por 10 segundos. Iniciando extração automática...")
             # Only start if authenticated and not already running
             if auth_exists() and str(self.btn_iniciar['state']) != 'disabled':
