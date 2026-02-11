@@ -152,14 +152,90 @@ def verificar_login(page: Page, timeout: int = 10000) -> bool:
         return False
 
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+def realizar_login(page: Page) -> bool:
+    """
+    Realiza o login automático caso a sessão tenha expirado.
+    Sequência:
+    1. Preenche usuário (env OMIE_USER)
+    2. Clica em "Continuar"
+    3. Preenche senha (env OMIE_PASSWORD)
+    4. Clica em "Entrar"
+    """
+    logger.info("Iniciando processo de login automático...")
     
-    if auth_exists():
-        print(f"✅ Arquivo de autenticação encontrado: {AUTH_STATE_FILE}")
-        resposta = input("Deseja reconfigurar? (s/N): ")
-        if resposta.lower() == 's':
-            primeira_configuracao()
-    else:
-        print("❌ Arquivo de autenticação não encontrado.")
-        primeira_configuracao()
+    usuario = os.getenv("OMIE_USER")
+    senha = os.getenv("OMIE_PASSWORD")
+    
+    if not usuario or not senha:
+        logger.error("❌ Credenciais (OMIE_USER, OMIE_PASSWORD) não encontradas no .env")
+        return False
+
+    try:
+        # Se não estiver na página de login, tenta ir (embora geralmente já esteja ou redirecione)
+        if "login" not in page.url.lower() and "entrar" not in page.title().lower():
+             logger.info("Redirecionando para página de login...")
+             page.goto(OMIE_URL, timeout=30000)
+        
+        # 1. Coloca Usuário
+        logger.info("Preenchendo e-mail...")
+        # Tenta seletores comuns para e-mail
+        email_input = None
+        try:
+            email_input = page.get_by_placeholder("Digite seu endereço de e-mail")
+            if not email_input.is_visible():
+                email_input = page.locator('input[type="email"]')
+        except:
+             pass
+        
+        if not email_input or not email_input.is_visible():
+             # Fallback: talvez já esteja no passo da senha ou logado?
+             if page.get_by_text("Continuar com a Apple").is_visible(): # Elemento da tela de login
+                 email_input = page.locator("input").first
+             else:
+                 logger.warning("Campo de e-mail não encontrado. Tentando verificar se já estamos na etapa de senha.")
+
+        if email_input and email_input.is_visible():
+            email_input.fill(usuario)
+            
+            # 2. Clica no botão "Continuar"
+            logger.info("Clicando em 'Continuar'...")
+            page.get_by_role("button", name="Continuar").click()
+            
+            # Aguarda transição para o campo de senha
+            page.wait_for_timeout(2000)
+
+        # 3. Coloca Senha
+        logger.info("Preenchendo senha...")
+        senha_input = page.locator('input[type="password"]')
+        senha_input.wait_for(state="visible", timeout=10000)
+        senha_input.fill(senha)
+        
+        # 4. Clica no botão "Entrar"
+        logger.info("Clicando em 'Entrar'...")
+        entrar_btn = page.get_by_role("button", name="Entrar")
+        if not entrar_btn.is_visible():
+             # Tenta achar pelo texto exato se o role não funcionar
+             entrar_btn = page.get_by_text("Entrar", exact=True)
+             
+        entrar_btn.click()
+        
+        # Aguarda login
+        logger.info("Aguardando confirmação de login...")
+        page.wait_for_load_state("networkidle", timeout=30000)
+        
+        # Verifica se logou
+        if verificar_login(page, timeout=10000):
+            logger.info("✅ Login automático realizado com sucesso!")
+            
+            # Salva os novos cookies
+            context = page.context
+            save_auth_state(context)
+            return True
+        else:
+            logger.error("❌ Falha na verificação pós-login.")
+            return False
+
+    except Exception as e:
+        logger.error(f"❌ Erro durante login automático: {e}")
+        return False
+

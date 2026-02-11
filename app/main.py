@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 # Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(__file__))
 
-from auth import auth_exists, get_browser_context, AUTH_STATE_FILE, OMIE_URL, DOWNLOADS_DIR
+from auth import auth_exists, get_browser_context, AUTH_STATE_FILE, OMIE_URL, DOWNLOADS_DIR, realizar_login
 from actions.process_excel.process_excel import process_excel
 from actions.upsert_data.upsert_contas_a_pagar import upsert_data as upsert_contas_a_pagar
 from actions.upsert_data.upsert_notas_faturadas import upsert_data as upsert_notas_faturadas
@@ -149,20 +149,42 @@ def navegar_para_financas(page: Page) -> tuple[bool, Page]:
         
         # Check if we're on the login page
         if "login" in page.url.lower():
-            logger.error("❌ Redirecionado para login! Cookies expiraram.")
-            logger.error("Execute 'Primeira Configuração' novamente.")
-            return False, page
+            logger.warning("Redirecionado para login! Tentando login automático...")
+            if not realizar_login(page):
+                 return False, page
         
         # Click "Acessar" button - THIS OPENS A NEW TAB!
         logger.info("Procurando botão 'Acessar'...")
         try:
-            # Try main content first
+            acessar_button = None
             try:
-                acessar_button = page.get_by_role("main").get_by_role("button", name="Acessar")
-                acessar_button.wait_for(state="visible", timeout=300000)
-            except:
-                acessar_button = page.get_by_role("button", name="Acessar").first
-                acessar_button.wait_for(state="visible", timeout=300000)
+                # Tenta encontrar o botão com timeout reduzido de 2 minutos (120000 ms)
+                # para dar chance de fazer login
+                logger.info("Aguardando botão 'Acessar' por até 2 minutos...")
+                
+                # First try main content
+                try:
+                    acessar_button = page.get_by_role("main").get_by_role("button", name="Acessar")
+                    acessar_button.wait_for(state="visible", timeout=120000)
+                except:
+                     acessar_button = page.get_by_role("button", name="Acessar").first
+                     acessar_button.wait_for(state="visible", timeout=120000)
+                     
+            except Exception:
+                # Timeout occurred or button not found
+                logger.warning("Botão 'Acessar' não encontrado em 2 minutos. Tentando login automático...")
+                if realizar_login(page):
+                     # Se o login funcionou, tenta achar o botão de novo
+                     logger.info("Login realizado. Procurando botão 'Acessar' novamente...")
+                     acessar_button = page.get_by_role("button", name="Acessar").first
+                     acessar_button.wait_for(state="visible", timeout=60000)
+                else:
+                     logger.error("Falha no login automático e botão 'Acessar' não encontrado.")
+                     return False, page
+
+            if not acessar_button:
+                 logger.error("Botão 'Acessar' não pode ser localizado.")
+                 return False, page
             
             logger.info("Clicando em 'Acessar' (abrirá nova aba)...")
             
@@ -506,7 +528,7 @@ def run_extraction(relatorios_selecionados: list = None):
     logger.info("="*60)
     
     with sync_playwright() as playwright:
-        browser, context = get_browser_context(playwright, headless=True)
+        browser, context = get_browser_context(playwright, headless=False)
         page = context.new_page()
         
         try:
