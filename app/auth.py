@@ -9,6 +9,7 @@ Features:
 """
 
 import os
+import time
 import logging
 from playwright.sync_api import sync_playwright, Browser, BrowserContext, Page
 from dotenv import load_dotenv
@@ -119,6 +120,7 @@ def primeira_configuracao() -> bool:
 def verificar_login(page: Page, timeout: int = 10000) -> bool:
     """
     Verifies if the user is logged in by checking for common elements.
+    Waits up to 'timeout' milliseconds for any of the indicators to appear.
     
     Args:
         page: Playwright page
@@ -129,22 +131,32 @@ def verificar_login(page: Page, timeout: int = 10000) -> bool:
     """
     try:
         # Look for common logged-in indicators
-        # These selectors might need adjustment based on Omie's actual UI
         logged_in_selectors = [
-            'text=Acessar',  # "Acessar" button on home
+            'button:has-text("Acessar")', # More specific locator for Acessar button
+            'text="Acessar"',          # Fallback text
             '[data-testid="user-menu"]',
             '.user-avatar',
-            'text=Dashboard'
+            'text=Dashboard',
+            'text=Meus Aplicativos'    # Common header on Omie portal apps page
         ]
         
-        for selector in logged_in_selectors:
-            try:
-                if page.locator(selector).first.is_visible(timeout=timeout):
-                    logger.info("Login verificado com sucesso")
-                    return True
-            except:
-                continue
+        logger.info(f"Verificando login (aguardando até {timeout/1000}s)...")
         
+        # Poll for elements until timeout
+        start_time = time.time()
+        while (time.time() - start_time) * 1000 < timeout:
+            for selector in logged_in_selectors:
+                try:
+                    # check if visible NOW
+                    if page.locator(selector).first.is_visible():
+                        logger.info(f"Login verificado com sucesso (encontrado: {selector})")
+                        return True
+                except:
+                    continue
+            
+            page.wait_for_timeout(500) # Wait 500ms before next check
+            
+        logger.warning("Tempo esgotado na verificação de login.")
         return False
         
     except Exception as e:
@@ -178,45 +190,32 @@ def realizar_login(page: Page) -> bool:
         
         # 1. Coloca Usuário
         logger.info("Preenchendo e-mail...")
-        # Tenta seletores comuns para e-mail
-        email_input = None
-        try:
-            email_input = page.get_by_placeholder("Digite seu endereço de e-mail")
-            if not email_input.is_visible():
-                email_input = page.locator('input[type="email"]')
-        except:
-             pass
         
-        if not email_input or not email_input.is_visible():
-             # Fallback: talvez já esteja no passo da senha ou logado?
-             if page.get_by_text("Continuar com a Apple").is_visible(): # Elemento da tela de login
-                 email_input = page.locator("input").first
-             else:
-                 logger.warning("Campo de e-mail não encontrado. Tentando verificar se já estamos na etapa de senha.")
-
-        if email_input and email_input.is_visible():
-            email_input.fill(usuario)
-            
-            # 2. Clica no botão "Continuar"
-            logger.info("Clicando em 'Continuar'...")
-            page.get_by_role("button", name="Continuar").click()
-            
-            # Aguarda transição para o campo de senha
-            page.wait_for_timeout(2000)
+        # User defined selector: getByRole('textbox', { name: 'Digite seu endereço de e-mail' })
+        # Using .first just in case, though get_by_role should be specific enough if unique
+        email_input = page.get_by_role('textbox', name='Digite seu endereço de e-mail')
+        email_input.fill(usuario)
+        
+        # 2. Clica no botão "Continuar"
+        logger.info("Clicando em 'Continuar'...")
+        # User defined selector: getByRole('button', { name: 'Continuar', exact: true })
+        page.get_by_role('button', name='Continuar', exact=True).click()
+        
+        # Aguarda transição para o campo de senha
+        page.wait_for_timeout(2000)
 
         # 3. Coloca Senha
         logger.info("Preenchendo senha...")
-        senha_input = page.locator('input[type="password"]')
+        # User defined selector: getByRole('textbox', { name: 'Digite aqui sua senha' })
+        # Note: Ideally this would be a password field, but using user provided selector.
+        senha_input = page.get_by_role('textbox', name='Digite aqui sua senha')
         senha_input.wait_for(state="visible", timeout=10000)
         senha_input.fill(senha)
         
         # 4. Clica no botão "Entrar"
         logger.info("Clicando em 'Entrar'...")
-        entrar_btn = page.get_by_role("button", name="Entrar")
-        if not entrar_btn.is_visible():
-             # Tenta achar pelo texto exato se o role não funcionar
-             entrar_btn = page.get_by_text("Entrar", exact=True)
-             
+        # User defined selector: getByRole('button', { name: 'Entrar' })
+        entrar_btn = page.get_by_role('button', name='Entrar')
         entrar_btn.click()
         
         # Aguarda login

@@ -157,29 +157,64 @@ def navegar_para_financas(page: Page) -> tuple[bool, Page]:
         logger.info("Procurando botão 'Acessar'...")
         try:
             acessar_button = None
-            try:
-                # Tenta encontrar o botão com timeout reduzido de 2 minutos (120000 ms)
-                # para dar chance de fazer login
-                logger.info("Aguardando botão 'Acessar' por até 2 minutos...")
-                
-                # First try main content
+            
+            # Helper function to find button
+            def encontrar_acessar_btn(timeout=5000):
+                btn = None
                 try:
-                    acessar_button = page.get_by_role("main").get_by_role("button", name="Acessar")
-                    acessar_button.wait_for(state="visible", timeout=120000)
+                    # 1. Try role=button
+                    btn = page.get_by_role("button", name="Acessar").first
+                    if btn.is_visible(timeout=timeout):
+                        return btn
+                    
+                    # 2. Try text match (fallback)
+                    btn = page.get_by_text("Acessar", exact=True).first
+                    if btn.is_visible(timeout=timeout):
+                        logger.info("Botão 'Acessar' encontrado via texto.")
+                        return btn
                 except:
-                     acessar_button = page.get_by_role("button", name="Acessar").first
-                     acessar_button.wait_for(state="visible", timeout=120000)
-                     
-            except Exception:
-                # Timeout occurred or button not found
+                    pass
+                return None
+
+            # Tenta encontrar o botão com timeout estendido (2 min)
+            # para dar chance de carregamento lento
+            logger.info("Aguardando botão 'Acessar' por até 2 minutos...")
+            
+            start_time = time.time()
+            found = False
+            
+            # Polling loop for 2 minutes or until found
+            while time.time() - start_time < 120:
+                acessar_button = encontrar_acessar_btn(timeout=1000)
+                if acessar_button:
+                    found = True
+                    break
+                time.sleep(2)
+            
+            if not found:
+                # Timeout occurred - Assume we need to login
                 logger.warning("Botão 'Acessar' não encontrado em 2 minutos. Tentando login automático...")
+                
+                # Force navigation to login if needed/check login
                 if realizar_login(page):
                      # Se o login funcionou, tenta achar o botão de novo
                      logger.info("Login realizado. Procurando botão 'Acessar' novamente...")
-                     acessar_button = page.get_by_role("button", name="Acessar").first
-                     acessar_button.wait_for(state="visible", timeout=60000)
+                     
+                     # Wait up to 60s for it to appear after login
+                     found_after_login = False
+                     start_time_login = time.time()
+                     while time.time() - start_time_login < 60:
+                        acessar_button = encontrar_acessar_btn(timeout=1000)
+                        if acessar_button:
+                            found_after_login = True
+                            break
+                        time.sleep(1)
+                     
+                     if not found_after_login:
+                        logger.error("Falha: Botão 'Acessar' não apareceu após login.")
+                        return False, page
                 else:
-                     logger.error("Falha no login automático e botão 'Acessar' não encontrado.")
+                     logger.error("Falha no login automático.")
                      return False, page
 
             if not acessar_button:
