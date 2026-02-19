@@ -162,12 +162,21 @@ def navegar_para_financas(page: Page) -> tuple[bool, Page]:
             def encontrar_acessar_btn(timeout=5000):
                 btn = None
                 try:
-                    # 1. Try role=button
-                    btn = page.get_by_role("button", name="Acessar").first
+                    # 1. Try main content first (Correct Selector)
+                    # User reported specific issue where banner button is clicked instead
+                    btn = page.get_by_role("main").get_by_role("button", name="Acessar").first
                     if btn.is_visible(timeout=timeout):
                         return btn
+
+                    # 2. Try role=button (Fallback)
+                    btn = page.get_by_role("button", name="Acessar").first
+                    if btn.is_visible(timeout=timeout):
+                        # Verify if it's not the banner one if possible, or just return it as fallback
+                        # Log warning that we are using fallback
+                        logger.warning("Usando seletor genérico para botão Acessar (pode ser o do banner)")
+                        return btn
                     
-                    # 2. Try text match (fallback)
+                    # 3. Try text match (fallback)
                     btn = page.get_by_text("Acessar", exact=True).first
                     if btn.is_visible(timeout=timeout):
                         logger.info("Botão 'Acessar' encontrado via texto.")
