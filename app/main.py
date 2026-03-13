@@ -572,7 +572,7 @@ def run_extraction(relatorios_selecionados: list = None):
     logger.info("="*60)
     
     with sync_playwright() as playwright:
-        browser, context = get_browser_context(playwright, headless=False)
+        browser, context = get_browser_context(playwright, headless=True)
         page = context.new_page()
         
         try:

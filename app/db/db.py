@@ -1,21 +1,20 @@
 """
-Bot Omie - MySQL Database Connection Module
-============================================
+Bot Omie - PostgreSQL Database Connection Module
+=================================================
 
-Provides database connection factory with auto-creation of database.
-Based on bot_pso architecture.
+Provides thread-safe connection pool for PostgreSQL.
+Uses schema 'omie' for all bot tables.
 """
 
 import logging
-import mysql.connector
-from mysql.connector import Error
+import psycopg2
+from psycopg2.pool import ThreadedConnectionPool
+from psycopg2 import Error
 from dotenv import load_dotenv
 import os
 
-# Load environment variables
 load_dotenv()
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -26,57 +25,84 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+SCHEMA = "omie"
 
-def _ensure_database_exists():
-    """
-    Ensures the target database exists. Creates it if it doesn't.
-    """
-    try:
-        conn = mysql.connector.connect(
-            host=os.getenv('DB_HOST', 'localhost'),
-            port=int(os.getenv('DB_PORT', 3306)),
+_pool = None
+
+
+def _get_pool():
+    """Returns the connection pool, creating it lazily if needed."""
+    global _pool
+    if _pool is None or _pool.closed:
+        _pool = ThreadedConnectionPool(
+            minconn=int(os.getenv('DB_POOL_MIN', 2)),
+            maxconn=int(os.getenv('DB_POOL_MAX', 5)),
+            host=os.getenv('DB_HOST'),
+            port=int(os.getenv('DB_PORT', 5432)),
+            dbname=os.getenv('DB_NAME'),
             user=os.getenv('DB_USER'),
             password=os.getenv('DB_PASSWORD')
         )
+        logger.info("Connection pool created successfully.")
+        _init_schema()
+    return _pool
+
+
+def _init_schema():
+    """Creates the schema and trigger function if they don't exist."""
+    conn = _pool.getconn()
+    try:
         cursor = conn.cursor()
-        db_name = os.getenv('DB_NAME', 'omie_db')
-        cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{db_name}`")
+        cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
+        cursor.execute(f"""
+            CREATE OR REPLACE FUNCTION {SCHEMA}.set_updated_at()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                NEW.updated_at = NOW();
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+        """)
         conn.commit()
         cursor.close()
-        conn.close()
-        logger.info(f"Database '{db_name}' verified/created successfully.")
+        logger.info(f"Schema '{SCHEMA}' and trigger function verified/created.")
     except Error as e:
-        logger.error(f"Error ensuring database exists: {e}")
+        conn.rollback()
+        logger.error(f"Error initializing schema: {e}")
         raise
+    finally:
+        _pool.putconn(conn)
 
 
 def get_conn():
     """
-    Returns a MySQL connection to the configured database.
-    Creates the database if it doesn't exist.
-    
+    Returns a PostgreSQL connection from the pool.
+
     Returns:
-        mysql.connector.connection.MySQLConnection: Active database connection
+        psycopg2 connection object
     """
-    _ensure_database_exists()
-    
-    try:
-        conn = mysql.connector.connect(
-            host=os.getenv('DB_HOST', 'localhost'),
-            port=int(os.getenv('DB_PORT', 3306)),
-            user=os.getenv('DB_USER'),
-            password=os.getenv('DB_PASSWORD'),
-            database=os.getenv('DB_NAME', 'omie_db')
-        )
-        logger.info("Database connection established successfully.")
-        return conn
-    except Error as e:
-        logger.error(f"Error connecting to database: {e}")
-        raise
+    pool = _get_pool()
+    conn = pool.getconn()
+    logger.info("Database connection acquired from pool.")
+    return conn
+
+
+def release_conn(conn):
+    """
+    Returns a connection to the pool.
+
+    Args:
+        conn: psycopg2 connection object
+    """
+    pool = _get_pool()
+    pool.putconn(conn)
+    logger.info("Database connection released to pool.")
 
 
 if __name__ == "__main__":
-    # Test connection
     conn = get_conn()
-    print("Connection successful!")
-    conn.close()
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1")
+    print(f"Connection successful! Result: {cursor.fetchone()}")
+    cursor.close()
+    release_conn(conn)
